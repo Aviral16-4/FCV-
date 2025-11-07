@@ -1,0 +1,178 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+# -----------------------------
+# 1. INITIAL SETUP & PARAMETERS
+# -----------------------------
+print("Initializing Multi-Object Tracking using Optical KLT Feature Tracking...")
+
+# List of video files to process
+video_files = [
+    r"C:\Users\Aviral\Documents\Wondershare Filmora 9\Projects\bda mini project\854897-hd_1920_1080_30fps.mp4",
+    r"C:\Users\Aviral\Documents\Wondershare Filmora 9\Projects\bda mini project\2103099-uhd_3840_2160_30fps.mp4",
+    r"C:\Users\Aviral\Documents\Wondershare Filmora 9\Projects\bda mini project\6574256-hd_1280_720_25fps.mp4"
+]
+
+# Parameters for Shi-Tomasi Corner Detection
+feature_params = dict(maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
+
+# Parameters for Lucas-Kanade Optical Flow (KLT)
+lk_params = dict(winSize=(15, 15), maxLevel=2,
+                 criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+# Parameters for Background Subtraction
+bg_subtractor = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=50, detectShadows=True)
+
+# Train/Test Split Ratio
+train_ratio = 0.8
+accuracy_threshold = 5  # pixels
+
+# To store results for all videos
+video_accuracies = {}
+
+# -----------------------------
+# 2. PROCESS EACH VIDEO
+# -----------------------------
+for video_path in video_files:
+    print("\n-----------------------------------------------")
+    print(f"🎥 Processing Video: {os.path.basename(video_path)}")
+    print("-----------------------------------------------")
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"❌ Error: Could not open video file: {video_path}")
+        continue
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    train_frames = int(total_frames * train_ratio)
+    print(f"Total frames: {total_frames}")
+    print(f"Training on first {train_frames} frames, testing on remaining {total_frames - train_frames}")
+
+    # Reset to beginning
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    ret, first_frame = cap.read()
+    if not ret:
+        print("❌ Error: Cannot read first frame.")
+        cap.release()
+        continue
+
+    # Resize frame for uniform scaling
+    frame_height, frame_width = first_frame.shape[:2]
+    scale_factor = 0.7  # resize to fit window
+    first_frame = cv2.resize(first_frame, (int(frame_width * scale_factor), int(frame_height * scale_factor)))
+
+    gray = cv2.cvtColor(first_frame, cv2.COLOR_BGR2GRAY)
+    features = cv2.goodFeaturesToTrack(gray, mask=None, **feature_params)
+    prev_gray = gray.copy()
+
+    # -----------------------------
+    # TRAINING PHASE
+    # -----------------------------
+    print("🚀 Starting Training Phase...")
+    for _ in range(train_frames):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.resize(frame, (int(frame_width * scale_factor), int(frame_height * scale_factor)))
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        features = cv2.goodFeaturesToTrack(gray, mask=None, **feature_params)
+        prev_gray = gray.copy()
+    print("✅ Training Phase Complete.")
+
+    # -----------------------------
+    # TESTING PHASE
+    # -----------------------------
+    print("🎯 Starting Testing Phase...")
+    cap.set(cv2.CAP_PROP_POS_FRAMES, train_frames)
+
+    total_points = 0
+    correctly_tracked = 0
+    frame_accuracies = []
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame = cv2.resize(frame, (int(frame_width * scale_factor), int(frame_height * scale_factor)))
+
+        # Background subtraction
+        fg_mask = bg_subtractor.apply(frame)
+        _, fg_mask = cv2.threshold(fg_mask, 250, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        for cnt in contours:
+            if cv2.contourArea(cnt) > 800:
+                x, y, w, h = cv2.boundingRect(cnt)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        if features is not None and len(features) > 0:
+            new_features, status, _ = cv2.calcOpticalFlowPyrLK(prev_gray, gray, features, None, **lk_params)
+            frame_total = 0
+            frame_correct = 0
+
+            for i, st in enumerate(status):
+                if st == 1:
+                    frame_total += 1
+                    total_points += 1
+                    dist = np.linalg.norm(new_features[i] - features[i])
+                    if dist <= accuracy_threshold:
+                        frame_correct += 1
+                        correctly_tracked += 1
+                        color = (0, 255, 0)
+                    else:
+                        color = (0, 0, 255)
+                    x, y = new_features[i].ravel()
+                    cv2.circle(frame, (int(x), int(y)), 4, color, -1)
+
+            frame_accuracy = (frame_correct / frame_total) * 100 if frame_total > 0 else 0
+            frame_accuracies.append(frame_accuracy)
+            prev_gray = gray.copy()
+            features = new_features[status == 1].reshape(-1, 1, 2)
+        else:
+            features = cv2.goodFeaturesToTrack(gray, mask=None, **feature_params)
+
+        cv2.namedWindow("KLT Multi-Object Tracking", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("KLT Multi-Object Tracking", 960, 540)
+        cv2.imshow("KLT Multi-Object Tracking", frame)
+
+        if cv2.waitKey(20) & 0xFF == ord('q'):
+            break
+
+    # -----------------------------
+    # RESULTS & CLEANUP
+    # -----------------------------
+    accuracy = (correctly_tracked / total_points) * 100 if total_points > 0 else 0
+    print(f"✅ Completed: {os.path.basename(video_path)}")
+    print(f"📈 Overall Tracking Accuracy: {accuracy:.2f}%")
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+    # Store results for summary
+    video_accuracies[os.path.basename(video_path)] = {
+        "Accuracy": accuracy,
+        "Frame Accuracies": frame_accuracies
+    }
+
+# -----------------------------
+# 3. VISUALIZE COMPARATIVE ACCURACY
+# -----------------------------
+plt.figure(figsize=(10, 6))
+for video_name, data in video_accuracies.items():
+    plt.plot(data["Frame Accuracies"], label=f"{video_name} ({data['Accuracy']:.2f}%)")
+
+plt.xlabel("Frame Number")
+plt.ylabel("Frame-wise Accuracy (%)")
+plt.title("Comparison of Tracking Accuracy across Multiple Videos")
+plt.legend()
+plt.grid(True, linestyle='--', alpha=0.6)
+plt.tight_layout()
+plt.show()
+
+print("\n✅ All videos processed successfully!")
+quit
