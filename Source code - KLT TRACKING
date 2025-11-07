@@ -42,7 +42,7 @@ for video_path in video_files:
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        print(f"❌ Error: Could not open video file: {video_path}")
+        print(f" Error: Could not open video file: {video_path}")
         continue
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -54,7 +54,7 @@ for video_path in video_files:
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     ret, first_frame = cap.read()
     if not ret:
-        print("❌ Error: Cannot read first frame.")
+        print(" Error: Cannot read first frame.")
         cap.release()
         continue
 
@@ -70,7 +70,7 @@ for video_path in video_files:
     # -----------------------------
     # TRAINING PHASE
     # -----------------------------
-    print("🚀 Starting Training Phase...")
+    print(" Starting Training Phase...")
     for _ in range(train_frames):
         ret, frame = cap.read()
         if not ret:
@@ -79,12 +79,12 @@ for video_path in video_files:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         features = cv2.goodFeaturesToTrack(gray, mask=None, **feature_params)
         prev_gray = gray.copy()
-    print("✅ Training Phase Complete.")
+    print(" Training Phase Complete.")
 
     # -----------------------------
     # TESTING PHASE
     # -----------------------------
-    print("🎯 Starting Testing Phase...")
+    print(" Starting Testing Phase...")
     cap.set(cv2.CAP_PROP_POS_FRAMES, train_frames)
 
     total_points = 0
@@ -147,8 +147,8 @@ for video_path in video_files:
     # RESULTS & CLEANUP
     # -----------------------------
     accuracy = (correctly_tracked / total_points) * 100 if total_points > 0 else 0
-    print(f"✅ Completed: {os.path.basename(video_path)}")
-    print(f"📈 Overall Tracking Accuracy: {accuracy:.2f}%")
+    print(f" Completed: {os.path.basename(video_path)}")
+    print(f" Overall Tracking Accuracy: {accuracy:.2f}%")
 
     cap.release()
     cv2.destroyAllWindows()
@@ -174,5 +174,5 @@ plt.grid(True, linestyle='--', alpha=0.6)
 plt.tight_layout()
 plt.show()
 
-print("\n✅ All videos processed successfully!")
+print("\n All videos processed successfully!")
 quit
